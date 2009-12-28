@@ -223,7 +223,7 @@ typedef struct SymbolFileRec *SymbolFile;
 /***************************** Static variables *****************************/
 
 /* The version of this program. */
-static char *version_string = "stacktrace 0.9.2";
+static char *version_string = "stacktrace 0.9.3";
 
 /* The name of this program. */
 static PiGetOptCtxStruct optctx;
