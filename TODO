@@ -1,0 +1,12 @@
+
+			   TODO stacktrace
+			   ===============
+
+ - enable leaf
+ - disable leaf/symbol-file
+ - inspect group => show only group's leaks
+ - if/else/endif constructs for init files:
+
+      if `pwd' !~ "c:" then
+        chroot c:/work
+      endif

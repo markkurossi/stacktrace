@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Path to the malloc debug shared library.
+MALLOCDEBUGLIBPATH=/home/mtr/
+
+case `uname -rs` in
+    SunOS*4.*|NetBSD*)
+	LD_PRELOAD=${MALLOCDEBUGLIBPATH}libmallocdebug.so
+	;;
+
+    *)
+	if test -z "$LD_LIBRARY_PATH"; then
+	    LD_LIBRARY_PATH=${MALLOCDEBUGLIBPATH}
+	else
+	    LD_LIBRARY_PATH=${MALLOCDEBUGLIBPATH}:${LD_LIBRARY_PATH}
+	    export LD_LIBRARY_PATH
+	fi
+
+	LD_PRELOAD=libmallocdebug.so
+	;;
+esac
+
+export LD_PRELOAD
+exec $*
