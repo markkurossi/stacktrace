@@ -3,7 +3,7 @@
 #
 # Author: Markku Rossi <mtr@iki.fi>
 #
-# Copyright (c) 2003-2007 Markku Rossi.
+# Copyright (c) 2003-2009 Markku Rossi.
 #               All rights reserved.
 #
 # GNU makefile for the stacktrace program.  Since it seems to be too
@@ -165,3 +165,6 @@ dist:
 	@echo "Distribution $(distpackagedir).{tar.gz,zip} is ready:"
 	-@ls -l $(distpackagedir).tar.gz
 	-@ls -l $(distpackagedir).zip
+
+push:
+	git push public-repo master
