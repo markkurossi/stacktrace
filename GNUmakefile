@@ -167,4 +167,4 @@ dist:
 	-@ls -l $(distpackagedir).zip
 
 push:
-	git push public-repo master
+	git push origin master
