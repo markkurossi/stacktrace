@@ -128,7 +128,7 @@ clean:
 	$(RM) $(CLEANFILES)
 
 
-# Distribution making
+# Distribution making.
 
 PACKAGE_NAME = stacktrace
 PACKAGE_VERSION = 1.0
