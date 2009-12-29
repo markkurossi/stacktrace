@@ -6,9 +6,7 @@
 # Copyright (c) 2003-2009 Markku Rossi.
 #               All rights reserved.
 #
-# GNU makefile for the stacktrace program.  Since it seems to be too
-# hard to get this directory to build during the normal compilation,
-# this GNU makefile can be used for self-contained build.
+# GNU makefile for the stacktrace program.
 #
 
 # Some magics.
