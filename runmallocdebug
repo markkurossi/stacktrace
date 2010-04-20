@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Path to the malloc debug shared library.
-MALLOCDEBUGLIBPATH=/home/mtr/
+MALLOCDEBUGLIBPATH=/home/mtr/work/stacktrace
 
 case `uname -rs` in
     SunOS*4.*|NetBSD*)

@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2003-2007 Markku Rossi.
+ * Copyright (c) 2003-2010 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -192,8 +192,6 @@ pi_do_allocate(size_t size)
 
   pi_malloc_lock();
 
-  PI_ASSERT(size);
-
   /* Take a stack_trace. */
   stack_trace_depth = pi_stack_trace_set(stack_trace, 100);
 
@@ -313,7 +311,6 @@ pi_do_free(void *ptr)
 void *
 pi_malloc(size_t size)
 {
-  PI_ASSERT(size != 0);
   return pi_do_allocate(size);
 }
 
@@ -556,10 +553,6 @@ pi_malloc_dump_symbol_files(FILE *outfp)
 
       if (*cp == '\0')
 	/* No shared object of file path name specified. */
-	continue;
-
-      /* If this is the executable itself, skip it. */
-      if (strcmp(cp, exe) == 0)
 	continue;
 
       /* Found a new symbol file. */

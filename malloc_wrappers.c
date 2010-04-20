@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2005-2007 Markku Rossi.
+ * Copyright (c) 2005-2010 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -16,6 +16,7 @@
 #include "pimalloc.h"
 
 #include <dlfcn.h>
+#include <signal.h>
 
 /***************************** Global variables *****************************/
 
@@ -121,10 +122,23 @@ calloc(size_t number, size_t size)
   return pi_calloc(number, size);
 }
 
+static void
+dump_blocks(int sig)
+{
+  pi_malloc_dump_statistics();
+  fprintf(stderr, "pimalloc: dumping blocks...\n");
+  pi_malloc_dump_blocks();
+  fprintf(stderr, "pimalloc: done\n");
+}
 
 static void
 init(void)
 {
+  char buf[256];
+  ssize_t ret;
+  const char *signal_path = "/tmp/mallocdebug";
+  int sig = -1;
+
   initialized = 1;
   pi_malloc_ptr = bootstrap_malloc;
   pi_free_ptr = bootstrap_free;
@@ -153,6 +167,25 @@ init(void)
       perror("Could not fetch free");
       exit(1);
     }
+
+  ret = readlink(signal_path, buf, sizeof(buf));
+  if (ret != -1)
+    {
+      sig = atoi(buf);
+
+      if (sig >= 0 && signal(sig, dump_blocks) == SIG_ERR)
+        sig = -2;
+    }
+
+  if (sig < 0)
+    fprintf(stderr,
+            "pimalloc: no signal handler defined (ln -s SIGNAL %s)\n"
+            "pimalloc: SIGUSR1=%d, SIGUSR2=%d\n",
+            signal_path, SIGUSR1, SIGUSR2);
+  else
+    fprintf(stderr,
+            "pimalloc: memory dump signal handler set: signal=%d, pid=%d\n",
+            sig, getpid());
 
   fprintf(stderr, "pimalloc: malloc=%p[%p], free=%p[%p]\n",
 	  pi_malloc_ptr, malloc, pi_free_ptr, free);

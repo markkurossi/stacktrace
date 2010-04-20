@@ -3,7 +3,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2001-2009 Markku Rossi.
+ * Copyright (c) 2001-2010 Markku Rossi.
  *
  * Map program counter values for source files.  The program
  * implements both an interactive memory leak check shell and a
@@ -761,13 +761,14 @@ enable_symbol_file(const char *symbol_file)
 
   if (!bfd_check_format_matches(abfd, bfd_object, &matching))
     {
-      fprintf(stderr, "%s: format mismatch: %s\n", optctx.program,
-              bfd_errmsg(bfd_get_error()));
+      fprintf(stderr, "%s: %s: format mismatch: %s\n", optctx.program,
+              symbol_file, bfd_errmsg(bfd_get_error()));
       if (bfd_get_error() == bfd_error_file_ambiguously_recognized)
         {
           char **p = matching;
 
-          fprintf(stderr, "%s: Matching formats:", optctx.program);
+          fprintf(stderr, "%s: %s: matching formats:",
+                  optctx.program, symbol_file);
           while (*p)
             fprintf(stderr, " %s", *p++);
           fprintf(stderr, "\n");
@@ -779,7 +780,8 @@ enable_symbol_file(const char *symbol_file)
       return FALSE;
     }
 
-  printf("%s: file format %s\n", bfd_get_filename(abfd), abfd->xvec->name);
+  printf("%s: %s: file format %s\n",
+         optctx.program, bfd_get_filename(abfd), abfd->xvec->name);
 
   /* Fetch symbols. */
   syms = slurp_symtabl(abfd, &symcount);
@@ -788,8 +790,8 @@ enable_symbol_file(const char *symbol_file)
   sect = bfd_get_section_by_name(abfd, SECTION_NAME);
   if (sect == NULL)
     {
-      fprintf(stderr, "%s: could not find section `%s'\n",
-              optctx.program, SECTION_NAME);
+      fprintf(stderr, "%s: %s: could not find section `%s'\n",
+              optctx.program, symbol_file, SECTION_NAME);
       (void) bfd_close_all_done(abfd);
       return FALSE;
     }
@@ -829,10 +831,10 @@ find_nearest_line(unsigned long pc, const char **file, const char **func,
       return TRUE;
     }
 
-  /* First, check additional symbol files. */
-  for (f = symbol_files_head->next; f; f = f->next)
+  /* Check symbol files. */
+  for (f = symbol_files_head; f; f = f->next)
     {
-      if (f->abfd == NULL)
+      if (f->abfd == NULL || f->num_syms == 0)
 	/* Not enabled. */
 	continue;
 
@@ -841,9 +843,16 @@ find_nearest_line(unsigned long pc, const char **file, const char **func,
         /* Not in this symbol file. */
         continue;
 
-      tpc = pc - f->offset;
+      tpc = pc;
+      if (f->sect->vma + f->sect->size < f->offset)
+        tpc -= f->offset;
+
       if (tpc >= f->sect->vma)
         tpc -= f->sect->vma;
+
+      if (tpc >= f->sect->size)
+        /* Not in this section. */
+        continue;
 
       if (bfd_find_nearest_line(f->abfd, f->sect, f->syms, tpc,
                                 file, func, (unsigned int *) line))
@@ -852,20 +861,6 @@ find_nearest_line(unsigned long pc, const char **file, const char **func,
           entry = pc_hash_add(pc, *file, *func, *line);
           goto found;
         }
-    }
-
-  /* No match.  Try to lookup it from the executable. */
-  f = symbol_files_head;
-  tpc = pc;
-  if (tpc >= f->sect->vma)
-    tpc -= f->sect->vma;
-
-  if (bfd_find_nearest_line(f->abfd, f->sect, f->syms, tpc, file, func,
-                            (unsigned int *) line))
-    {
-      /* Found it from the executable. */
-      entry = pc_hash_add(pc, *file, *func, *line);
-      goto found;
     }
 
   /* Could not find the symbol. */
@@ -1502,13 +1497,6 @@ read_stacktrace(StackFrame *framep, unsigned int *nump,
                                  &frame->line);
 #endif /* HAVE_SYMBOL_FILE */
 
-      /* Terminate trace on the first empty frame. */
-      if (frame->functionname == NULL)
-        {
-          (*nump)--;
-          break;
-        }
-
       /* Print this frame. */
       if (batch)
         {
@@ -1933,34 +1921,34 @@ leak_info(void)
 static void
 frame_info_only(unsigned int frame)
 {
+  StackFrame f;
+
   if (current_leak->type == LEAK_GROUP)
     /* No frames in groups. */
     return;
 
   printf("#%-2u ", frame);
 
-  if (current_leak->stack_frames[frame].filename)
+  f = &current_leak->stack_frames[frame];
+
+  if (f->filename && f->line)
     {
       const char *cp;
 
-      cp = strrchr(current_leak->stack_frames[frame].filename, '/');
+      cp = strrchr(f->filename, '/');
       if (cp)
         cp++;
       else
-        cp = current_leak->stack_frames[frame].filename;
+        cp = f->filename;
 
-      printf("%s() at %s:%d%s\n",
-             current_leak->stack_frames[frame].functionname,
-             cp,
-             current_leak->stack_frames[frame].line,
-             current_leak->stack_frames[frame].leaf ? " (leaf)" : "");
+      printf("%s() at %s:%d%s\n", f->functionname, cp, f->line,
+             f->leaf ? " (leaf)" : "");
     }
   else
     {
-      printf("0x%08lx in %s()%s\n",
-             current_leak->stack_frames[frame].pc,
-             current_leak->stack_frames[frame].functionname,
-             current_leak->stack_frames[frame].leaf ? " (leaf)" : "");
+      printf("0x%08lx in %s()%s\n", f->pc,
+             f->functionname ? f->functionname : "???",
+             f->leaf ? " (leaf)" : "");
     }
 }
 
@@ -2376,6 +2364,70 @@ CMD(pc, "Locate single program counter value.", NULL)
   return 0;
 }
 
+CMD(scan, "Scan symbol files for program counter value.", NULL)
+{
+#if HAVE_SYMBOL_FILE
+  unsigned long pc, tpc;
+  const char *filename;
+  const char *functionname;
+  unsigned int line;
+  SymbolFile f;
+
+  /* Scan symbol files for PC value. */
+  pc = strtoul(argv[1], NULL, 0);
+
+  for (f = symbol_files_head; f; f = f->next)
+    {
+      if (f->abfd == NULL)
+        /* Not enabled. */
+        continue;
+
+      printf("%-35.35s:\t", f->symbol_file);
+
+      if (pc < f->offset
+	  || (f->size && pc >= f->offset + f->size))
+        {
+          /* Not in this symbol file. */
+          printf("not in range [%p-%p]\n",
+                 (void *) f->offset,
+                 (void *) f->offset + f->size);
+          continue;
+        }
+
+      tpc = pc;
+      if (f->sect->vma + f->sect->size < f->offset)
+        tpc -= f->offset;
+
+      if (tpc >= f->sect->vma)
+        tpc -= f->sect->vma;
+
+      if (tpc >= f->sect->size)
+        {
+          printf("not in range [%p-%p]\n",
+                 (void *) (long) (f->sect->vma),
+                 (void *) (long) (f->sect->vma + f->sect->size));
+          continue;
+        }
+
+      if (bfd_find_nearest_line(f->abfd, f->sect, f->syms, tpc,
+                                &filename, &functionname, &line))
+        {
+          /* Found a match. */
+          printf("%s:%d: %s()\n", filename, line, functionname);
+        }
+      else
+        {
+          printf("not found\n");
+        }
+    }
+
+#else /* not HAVE_SYMBOL_FILE */
+  printf("No symbol file support.\n");
+#endif /* not HAVE_SYMBOL_FILE */
+
+  return 0;
+}
+
 
 CMD(quit, "Exit stacktrace.", NULL)
 {
@@ -2459,10 +2511,21 @@ info_symbol_files(void)
   SymbolFile f;
   int i = 1;
 
-  printf("Num Enb  Syms Path\n");
+  printf("#   E  Syms Range             VMA      Path\n"
+         "\
+---------------------------------------------------------------------------\n");
   for (f = symbol_files_head; f; f = f->next)
-    printf("%-3d %s   %5lu %s\n",
-	   i++, f->abfd ? "y" : "n", f->num_syms, f->symbol_file);
+    {
+      if (f->num_syms == 0)
+        continue;
+
+      printf("%-3d %s %5lu %08x-%08x %08x %s\n",
+             i++, f->abfd ? "y" : "n", f->num_syms,
+             (unsigned int) (f ? f->offset : 0),
+             (unsigned int) (f ? f->offset + f->size - 1 : 0),
+             (unsigned int) (f && f->sect ? f->sect->vma : 0),
+             f->symbol_file);
+    }
 #else /* not HAVE_SYMBOL_FILE */
   printf("No symbol file support.\n");
 #endif /* not HAVE_SYMBOL_FILE */
@@ -2772,7 +2835,7 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
                     if (cp)
                       cp++;
                     else
-                      cp = (char *) leak->stack_frames[i].filename;
+                      cp = (char *) leak->stack_frames[j].filename;
 
                     if (gnu_glob_match(pattern, cp)
                         && (line == 0 || line == leak->stack_frames[j].line))
@@ -3217,6 +3280,7 @@ struct
   {CMD_ALIAS(ls, list)},
 
   {CMDD(pc,             2,      2,      0)},
+  {CMDD(scan,           2,      2,      0)},
   {CMDD(quit,           1,      1,      0)},
 
   {CMDD(info,           1,      2,      0)},

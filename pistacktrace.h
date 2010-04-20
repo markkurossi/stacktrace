@@ -15,6 +15,10 @@
 #ifndef PISTACKTRACE_H
 #define PISTACKTRACE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 /***************************** Public functions *****************************/
 
 /* Take a stack trace of the current call stack and store it into
@@ -22,5 +26,9 @@
    program counter values fit into the `stack_trace' array.  The
    function returns the actual call stack depth. */
 PiUInt32 pi_stack_trace_set(void **stack_trace, PiUInt32 stack_trace_depth);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif /* not PISTACKTRACE_H */
