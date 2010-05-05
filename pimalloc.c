@@ -58,6 +58,12 @@ struct PiMallocDebugHeaderRec
   struct PiMallocDebugHeaderRec *next;
   struct PiMallocDebugHeaderRec *prev;
 
+  /* When dumping memory leaks, blocks are stored into a hash table,
+     where an approximate hash value is computed from the stack
+     trace. */
+  unsigned long hash;
+  struct PiMallocDebugHeaderRec *hash_next;
+
   /* The size of the allocation request. */
   size_t alloc_size;
 
@@ -69,6 +75,9 @@ struct PiMallocDebugHeaderRec
 
   /* Tag. */
   char tag[8];
+
+  /* Pointer to free function. */
+  void (*free_ptr)(void *);
 
   /* Header magic. */
   PiUInt32 magic;
@@ -161,6 +170,7 @@ pi_malloc_unlock(void)
 void *(*pi_malloc_ptr)(size_t) = malloc;
 void (*pi_free_ptr)(void *) = free;
 
+
 /* Currently allocate memory blocks. */
 
 static PiMallocDebugHeader pi_malloc_blocks;
@@ -231,6 +241,7 @@ pi_do_allocate(size_t size)
   hdr->seen = 0;
   hdr->pad_length = pad_length;
   memset(hdr->tag, 0, sizeof(hdr->tag));
+  hdr->free_ptr = pi_free_ptr;
   hdr->magic = PI_MALLOC_HEADER_MAGIC;
 
   /* Padding. */
@@ -244,8 +255,14 @@ pi_do_allocate(size_t size)
   trailer->stack_trace_depth = stack_trace_depth;
 
   /* Stack trace. */
+
   st = PI_MALLOC_STACK_TRACE_FROM_HEADER(hdr);
   memcpy(st, stack_trace, stack_trace_depth * sizeof(void *));
+
+  hdr->hash = 0;
+
+  for (i = 0; i < stack_trace_depth; i++)
+    hdr->hash ^= ((unsigned long) stack_trace[i]) >> 2;
 
   pi_malloc_unlock();
 
@@ -302,7 +319,7 @@ pi_do_free(void *ptr)
   else
     pi_malloc_blocks = hdr->next;
 
-  (*pi_free_ptr)(hdr);
+  (*hdr->free_ptr)(hdr);
 
   pi_malloc_unlock();
 }
@@ -575,9 +592,11 @@ pi_malloc_dump_blocks(void)
   char *leak_file_name = "stacktrace.log";
   FILE *ofp;
   char *where;
-  size_t i;
+  size_t i, idx;
   PiUInt32 num_leaks = 0;
   size_t total_bytes = 0;
+  PiMallocDebugHeader *hash;
+  size_t hash_size = 10240;
 
   pi_malloc_lock();
 
@@ -596,82 +615,106 @@ pi_malloc_dump_blocks(void)
   /* Dump additional symbol files that are in use in this program. */
   pi_malloc_dump_symbol_files(ofp);
 
-  /* Dump all blocks. */
+  /* Insert all blocks to the hash table. */
+
+  hash = (*pi_malloc_ptr)(hash_size * sizeof(*hash));
+  if (hash == NULL)
+    {
+      pi_malloc_unlock();
+      fprintf(stderr, "malloc: could not allocate block hash\n");
+      return;
+    }
+
+  memset(hash, 0, hash_size * sizeof(*hash));
+
   for (h = pi_malloc_blocks; h; h = h->next)
     {
-      size_t bytes = 0;
-      size_t blocks = 0;
-      unsigned char *data;
-      size_t data_len;
+      idx = h->hash % hash_size;
 
-      if (h->seen)
-	/* This block is already seen. */
-	continue;
-
-      bytes = h->alloc_size;
-      blocks = 1;
-
-      /* Check if there are any similar blocks to this one. */
-
-      t = PI_MALLOC_TRAILER_FROM_HEADER(h);
-      st = PI_MALLOC_STACK_TRACE_FROM_HEADER(h);
-
-      for (h2 = h->next; h2; h2 = h2->next)
-	{
-	  if (h2->seen)
-	    /* This is already seen. */
-	    continue;
-
-	  t2 = PI_MALLOC_TRAILER_FROM_HEADER(h2);
-	  st2 = PI_MALLOC_STACK_TRACE_FROM_HEADER(h2);
-
-	  if (t->stack_trace_depth == t2->stack_trace_depth
-	      && memcmp(st, st2, t->stack_trace_depth * sizeof(void *)) == 0
-              && memcmp(h->tag, h2->tag, sizeof(h->tag)) == 0)
-	    {
-	      /* This matches. */
-	      h2->seen = 1;
-
-	      bytes += h2->alloc_size;
-	      blocks++;
-	    }
-	}
-
-      /* Update global statistics. */
-      num_leaks++;
-      total_bytes += bytes;
-
-      /* Header. */
-      fprintf(ofp, "<stacktrace blocks=\"%u\" bytes=\"%u\" data=\"",
-	      blocks, bytes);
-
-      /* Start of block's data. */
-
-      data_len = 256;
-      if (data_len > h->alloc_size)
-	data_len = h->alloc_size;
-
-      data = PI_MALLOC_BLOCK_FROM_HEADER(h);
-
-      for (i = 0; i < data_len; i++)
-	fprintf(ofp, "%02x", data[i]);
-
-      fprintf(ofp, "\"");
-
-      if (h->tag[0])
-        fprintf(ofp, " tag=\"%s\"", h->tag);
-
-      fprintf(ofp, ">\n");
-
-      /* Stack trace. */
-      for (i = 0; i < t->stack_trace_depth; i++)
-	fprintf(ofp, "  <pc>%p</pc>\n", st[i]);
-      fprintf(ofp, "</stacktrace>\n");
+      h->hash_next = hash[idx];
+      hash[idx] = h;
     }
+
+  /* Dump all blocks. */
+  for (idx = 0; idx < hash_size; idx++)
+    for (h = hash[idx]; h; h = h->hash_next)
+      {
+        size_t bytes = 0;
+        size_t blocks = 0;
+        unsigned char *data;
+        size_t data_len;
+
+        if (h->seen)
+          /* This block is already seen. */
+          continue;
+
+        bytes = h->alloc_size;
+        blocks = 1;
+
+        /* Check if there are any similar blocks to this one. */
+
+        t = PI_MALLOC_TRAILER_FROM_HEADER(h);
+        st = PI_MALLOC_STACK_TRACE_FROM_HEADER(h);
+
+        for (h2 = h->hash_next; h2; h2 = h2->hash_next)
+          {
+            if (h2->seen)
+              /* This is already seen. */
+              continue;
+
+            t2 = PI_MALLOC_TRAILER_FROM_HEADER(h2);
+            st2 = PI_MALLOC_STACK_TRACE_FROM_HEADER(h2);
+
+            if (t->stack_trace_depth == t2->stack_trace_depth
+                && memcmp(st, st2, t->stack_trace_depth * sizeof(void *)) == 0
+                && memcmp(h->tag, h2->tag, sizeof(h->tag)) == 0)
+              {
+                /* This matches. */
+                h2->seen = 1;
+
+                bytes += h2->alloc_size;
+                blocks++;
+              }
+          }
+
+        /* Update global statistics. */
+        num_leaks++;
+        total_bytes += bytes;
+
+        /* Header. */
+        fprintf(ofp, "<stacktrace blocks=\"%u\" bytes=\"%u\" data=\"",
+                blocks, bytes);
+
+        /* Start of block's data. */
+
+        data_len = 256;
+        if (data_len > h->alloc_size)
+          data_len = h->alloc_size;
+
+        data = PI_MALLOC_BLOCK_FROM_HEADER(h);
+
+        for (i = 0; i < data_len; i++)
+          fprintf(ofp, "%02x", data[i]);
+
+        fprintf(ofp, "\"");
+
+        if (h->tag[0])
+          fprintf(ofp, " tag=\"%s\"", h->tag);
+
+        fprintf(ofp, ">\n");
+
+        /* Stack trace. */
+        for (i = 0; i < t->stack_trace_depth; i++)
+          fprintf(ofp, "  <pc>%p</pc>\n", st[i]);
+        fprintf(ofp, "</stacktrace>\n");
+      }
 
   /* Clear seen flags. */
   for (h = pi_malloc_blocks; h; h = h->next)
     h->seen = 0;
+
+  /* Free hash table. */
+  (*pi_free_ptr)(hash);
 
   /* Close output file if it was opened. */
   if (ofp == stderr)

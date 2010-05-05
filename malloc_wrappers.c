@@ -44,8 +44,6 @@ bootstrap_malloc(size_t size)
 
   size = PI_ALIGN(size, 8);
 
-  fprintf(stderr, "pimalloc: bootstrap_malloc(%u)\n", size);
-
   if (bootstrap_allocated + size > sizeof(bootstrap_heap))
     {
       fprintf(stderr, "pimalloc: bootstrap heap out of space: size=%u\n",
@@ -56,6 +54,8 @@ bootstrap_malloc(size_t size)
   ptr = bootstrap_heap + bootstrap_allocated;
   bootstrap_allocated += size;
 
+  fprintf(stderr, "pimalloc: bootstrap_malloc(%u) => %p\n", size, ptr);
+
   return ptr;
 }
 
@@ -63,7 +63,7 @@ bootstrap_malloc(size_t size)
 static void
 bootstrap_free(void *ptr)
 {
-  fprintf(stderr, "pimalloc: bootstrap_malloc(%p)\n", ptr);
+  fprintf(stderr, "pimalloc: bootstrap_free(%p)\n", ptr);
 }
 
 
@@ -138,6 +138,9 @@ init(void)
   ssize_t ret;
   const char *signal_path = "/tmp/mallocdebug";
   int sig = -1;
+  int i;
+  int at_exit = 1;
+  char *endp;
 
   initialized = 1;
   pi_malloc_ptr = bootstrap_malloc;
@@ -171,24 +174,40 @@ init(void)
   ret = readlink(signal_path, buf, sizeof(buf));
   if (ret != -1)
     {
-      sig = atoi(buf);
+      for (i = 0; buf[i]; i++)
+        {
+          switch (buf[i])
+            {
+            case 'e':
+              at_exit = 0;
+              break;
+
+            default:
+              sig = strtol(buf + i, &endp, 10);
+              i = endp - buf - 1;
+              break;
+            }
+        }
 
       if (sig >= 0 && signal(sig, dump_blocks) == SIG_ERR)
         sig = -2;
-    }
 
-  if (sig < 0)
-    fprintf(stderr,
-            "pimalloc: no signal handler defined (ln -s SIGNAL %s)\n"
-            "pimalloc: SIGUSR1=%d, SIGUSR2=%d\n",
-            signal_path, SIGUSR1, SIGUSR2);
+      fprintf(stderr,
+              "pimalloc: options: signal=%d, pid=%d, atexit=%s\n",
+              sig, getpid(), at_exit ? "true" : "false");
+    }
   else
-    fprintf(stderr,
-            "pimalloc: memory dump signal handler set: signal=%d, pid=%d\n",
-            sig, getpid());
+    {
+      fprintf(stderr,
+              "pimalloc: no options defined (ln -s FLAGSSIGNAL %s)\n"
+              "pimalloc:   FLAGS: e=no atexit dump\n"
+              "pimalloc:   SIGNAL: dump signal (SIGUSR1=%d, SIGUSR2=%d)\n",
+              signal_path, SIGUSR1, SIGUSR2);
+    }
 
   fprintf(stderr, "pimalloc: malloc=%p[%p], free=%p[%p]\n",
 	  pi_malloc_ptr, malloc, pi_free_ptr, free);
 
-  atexit(pi_malloc_dump_blocks);
+  if (at_exit)
+    atexit(pi_malloc_dump_blocks);
 }

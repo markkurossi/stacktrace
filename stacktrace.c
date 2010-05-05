@@ -82,6 +82,7 @@ typedef enum
 typedef enum
 {
   GROUP_BY_FILE,
+  GROUP_BY_PATH,
   GROUP_BY_FUNCTION,
   GROUP_BY_LEAK
 } LeakGroupType;
@@ -115,9 +116,6 @@ struct MemoryLeakRec
   unsigned int marked : 1;        /* Marked for operation. */
   unsigned int has_seqnum : 1;	  /* Leak has alloc sequence number. */
   unsigned int fd_is_open : 1;    /* FD is open. */
-
-  /* Group type. */
-  unsigned int group_type : 2;
 
   char *filename;
   unsigned int line;
@@ -263,8 +261,8 @@ static const struct
 /* Print full source file names or just the base names. */
 static int fullname = 0;
 
-/* Enable additional symbol files automatically. */
-static int enable_symbol_files = 0;
+/* Are additional symbol files enabled. */
+static int enable_symbol_files = 1;
 
 /* The input file to use. */
 static FILE *ifp = NULL;
@@ -311,7 +309,7 @@ static void *last_command = NULL;
 static PiGetOptOptionStruct longopts[] =
 {
   {"batch",             	PI_GETOPT_NO_ARGUMENT,  	  'b'},
-  {"enable-symbol-files",	PI_GETOPT_NO_ARGUMENT,            'e'},
+  {"disable-symbol-files",	PI_GETOPT_NO_ARGUMENT,            'd'},
   {"fullname",          	PI_GETOPT_NO_ARGUMENT,            'f'},
   {"help",              	PI_GETOPT_NO_ARGUMENT,            'h'},
   {"output",            	PI_GETOPT_REQUIRED_ARGUMENT,      'o'},
@@ -401,8 +399,8 @@ main(int argc, char *argv[])
           batch = 1;
           break;
 
-	case 'e':
-	  enable_symbol_files = 1;
+	case 'd':
+	  enable_symbol_files = 0;
 	  break;
 
         case 'f':
@@ -883,7 +881,7 @@ usage(void)
 	  "\
 Mandatory arguments to long options are mandatory for short options too.\n\
   -b, --batch                run in batch mode\n\
-  -e, --enable-symbol-files  enable additional symbol files automatically\n\
+  -d, --disable-symbol-files disable additional symbol files\n\
   -f, --fullname             show full source file names in stack trace\n\
   -h, --help                 print this help and exit\n\
   -n, --nx                   do not read `%s' file\n\
@@ -1815,6 +1813,8 @@ static void
 print_location(void)
 {
   StackFrame frame;
+  struct stat st;
+  char path[1024];
 
   if (!fullname)
     return;
@@ -1826,10 +1826,23 @@ print_location(void)
   if (!frame->filename || frame->line == 0)
     return;
 
-  printf("\032\032%s%s%s:%u:%lu\n",
-         root_dir ? root_dir : "",
-         root_dir ? "/" : "",
-         frame->filename,
+  /* Check if file exists. */
+  snprintf(path, sizeof(path), "%s%s%s",
+           root_dir ? root_dir : "",
+           root_dir ? "/" : "",
+           frame->filename);
+
+  if (stat(path, &st) == -1)
+    {
+#if 0
+      fprintf(stderr, "Could not open file `%s': %s\n",
+              path, strerror(errno));
+#endif
+      return;
+    }
+
+  printf("\032\032%s:%u:%lu\n",
+         path,
          frame->line,
          frame->pc);
 }
@@ -2479,25 +2492,8 @@ info_groups(void)
   for (leak = leaks; leak; leak = leak->next)
     if (leak->type == LEAK_GROUP)
       {
-        char *how;
-
         matches++;
-
-        switch (leak->group_type)
-          {
-          case GROUP_BY_FILE:
-            how = "file";
-            break;
-
-          case GROUP_BY_FUNCTION:
-            how = "function";
-            break;
-
-          case GROUP_BY_LEAK:
-            how = "leak";
-            break;
-          }
-        printf("group %s %s\n", how, leak->filename);
+        printf("group %s\n", leak->filename);
       }
 
   if (matches == 0)
@@ -2764,25 +2760,39 @@ CMD(group,
     "Group memory leaks.",
     "\
 The argument TYPE specifies how grouping is done.  Possible values\n\
-are `file', `function', and `leak' to group by file name, function name,\n\
-and leak number respectively.  The argument PATTERN gives a glob-like\n\
-grouping pattern.\n\
+are `file', `path', `function', and `leak' to group by file basename,\n\
+file pathname, function name, and leak number respectively.  The argument\n\
+PATTERN gives a glob-like grouping pattern.\n\
 \n\
-For the `file' grouping method the pattern can be given as PATTERN:LINE\n\
-where PATTERN is glob-like pattern and LINE is line number.\n")
+If the grouping type is specified as !TYPE, then the command groups all\n\
+leaks that are not matching the PATTERN.  For the `file' grouping method\n\
+the pattern can be given as PATTERN:LINE where PATTERN is glob-like\n\
+pattern and LINE is line number.\n")
 {
   LeakGroupType how;
   MemoryLeak leak;
   MemoryLeak group;
   int index;
+  GnuBool neg = FALSE;
+  char *cp;
+  size_t len;
 
   NEED_LEAKS();
 
-  if (strcmp(argv[1], "file") == 0)
+  cp = argv[1];
+  if (cp[0] == '!')
+    {
+      neg = TRUE;
+      cp++;
+    }
+
+  if (strcmp(cp, "file") == 0)
     how = GROUP_BY_FILE;
-  else if (strcmp(argv[1], "function") == 0)
+  else if (strcmp(cp, "path") == 0)
+    how = GROUP_BY_PATH;
+  else if (strcmp(cp, "function") == 0)
     how = GROUP_BY_FUNCTION;
-  else if (strcmp(argv[1], "leak") == 0)
+  else if (strcmp(cp, "leak") == 0)
     how = GROUP_BY_LEAK;
   else
     {
@@ -2792,8 +2802,11 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
 
   group = gnu_xcalloc(1, sizeof(*group));
   group->type = LEAK_GROUP;
-  group->group_type = how;
-  group->filename = gnu_xstrdup(argv[2]);
+
+  len = strlen(argv[1]) + 1 + strlen(argv[2]) + 1;
+  group->filename = gnu_xmalloc(len);
+
+  snprintf(group->filename, len, "%s %s", argv[1], argv[2]);
 
   for (index = 1, leak = leaks; leak; index++, leak = leak->next)
     {
@@ -2803,6 +2816,7 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
         switch (how)
           {
           case GROUP_BY_FILE:
+          case GROUP_BY_PATH:
             {
               char *pattern;
               int line;
@@ -2832,7 +2846,7 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
                 if (leak->stack_frames[j].filename)
                   {
                     cp = strrchr(leak->stack_frames[j].filename, '/');
-                    if (cp)
+                    if (cp && how == GROUP_BY_FILE)
                       cp++;
                     else
                       cp = (char *) leak->stack_frames[j].filename;
@@ -2851,7 +2865,9 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
 
           case GROUP_BY_FUNCTION:
             for (j = 0; j < leak->num_stack_frames; j++)
-              if (gnu_glob_match(argv[i], leak->stack_frames[j].functionname))
+              if (leak->stack_frames[j].functionname
+                  && gnu_glob_match(argv[i],
+                                    leak->stack_frames[j].functionname))
                 goto mark;
             break;
 
@@ -2861,9 +2877,19 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
             break;
           }
 
+      /* Leak not matched. */
+      if (neg)
+        leak->marked = 1;
+
       continue;
 
     mark:
+
+      /* Leak matched. */
+
+      if (neg)
+        continue;
+
       leak->marked = 1;
     }
 
@@ -2918,6 +2944,155 @@ where PATTERN is glob-like pattern and LINE is line number.\n")
 
   return 0;
 }
+
+CMD(autogroup,
+    "Group memory leaks based on source file directories.",
+    "\
+The PATTERN arguments specify optional source file path patterns that\n\
+are used to select source file path for grouping.  If no patterns are\n\
+defined, the grouping is done based on first frame that has source\n\
+file information.\n")
+{
+  MemoryLeak leak;
+
+  NEED_LEAKS();
+
+  for (leak = leaks; leak; leak = leak->next)
+    {
+      int i, j;
+
+      for (i = 0; i < leak->num_stack_frames; i++)
+        if (leak->stack_frames[i].filename)
+          {
+            GnuBool found = FALSE;
+            MemoryLeak group;
+            MemoryLeak l;
+            char *cp;
+            size_t group_len;
+
+            if (argc == 1)
+              {
+                found = TRUE;
+              }
+            else
+              {
+                for (j = 1; j < argc; j++)
+                  if (gnu_glob_match(argv[j], leak->stack_frames[i].filename))
+                    {
+                      found = TRUE;
+                      break;
+                    }
+              }
+
+            if (!found)
+              continue;
+
+            /* Group based on this path. */
+            group = gnu_xcalloc(1, sizeof(*group));
+            group->type = LEAK_GROUP;
+            group->filename = gnu_xstrdup(leak->stack_frames[i].filename);
+            cp = strrchr(group->filename, '/');
+
+            if (cp)
+              cp[1] = '\0';
+
+            group_len = strlen(group->filename);
+
+            /* Insert group before `leak'. */
+
+            group->next = leak;
+            group->prev = leak->prev;
+            if (group->prev)
+              group->prev->next = group;
+            else
+              leaks = group;
+
+            leak->prev = group;
+
+            leak = group;
+
+            num_leaks++;
+
+            /* Collect all matching leaks into this group. */
+            for (l = group->next; l; )
+              {
+                for (i = 0; i < l->num_stack_frames; i++)
+                  if (l->stack_frames[i].filename)
+                    {
+                      found = FALSE;
+
+                      if (argc == 1)
+                        {
+                          found = TRUE;
+                        }
+                      else
+                        {
+                          for (j = 1; j < argc; j++)
+                            if (gnu_glob_match(argv[j],
+                                               l->stack_frames[i].filename))
+                              {
+                                found = TRUE;
+                                break;
+                              }
+                        }
+
+                      if (!found)
+                        continue;
+
+                      /* Found the leak pathname.  Now check if it
+                         matches our current group. */
+                      if (strlen(l->stack_frames[i].filename) >= group_len
+                          && memcmp(l->stack_frames[i].filename,
+                                    group->filename, group_len) == 0)
+                        /* This leak matches. */
+                        break;
+                    }
+                if (i >= l->num_stack_frames)
+                  {
+                    /* This leak does not belong to our group. */
+                    l = l->next;
+                  }
+                else
+                  {
+                    MemoryLeak t;
+
+                    /* Add this leak to group. */
+                    group->blocks += l->blocks;
+                    group->bytes += l->bytes;
+                    group->line++;
+
+                    t = l;
+                    l = l->next;
+
+                    if (t->next)
+                      t->next->prev = t->prev;
+
+                    if (t->prev)
+                      t->prev->next = t->next;
+                    else
+                      leaks = t->next;
+
+                    t->next = group->grouped;
+                    if (t->next)
+                      t->next->prev = t;
+
+                    t->prev = NULL;
+
+                    group->grouped = t;
+
+                    num_leaks--;
+                  }
+              }
+          }
+    }
+
+  current_leak = leaks;
+  current_leak_index = 0;
+  current_frame = 0;
+
+  return 0;
+}
+
 
 CMD(ungroup,
     "Ungroup memory leak groups.",
@@ -3291,6 +3466,7 @@ struct
   {CMDD(dump,           1,      2,      0)},
 
   {CMDD(group,          3,      -1,     0)},
+  {CMDD(autogroup,      1,      -1,     0)},
   {CMDD(ungroup,        2,      -1,     0)},
 
   {CMDD(enable,         3,      -1,     0)},
