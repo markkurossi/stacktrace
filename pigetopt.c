@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2003-2005 Markku Rossi.
+ * Copyright (c) 2003-2016 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -20,7 +20,6 @@
 int
 pi_getopt(int argc, char *argv[], PiGetOptCtx ctx, PiGetOptOption options)
 {
-  int option;
   int i;
 
   /* Init the context unless it is already initialized. */
@@ -42,11 +41,8 @@ pi_getopt(int argc, char *argv[], PiGetOptCtx ctx, PiGetOptOption options)
       /* Yes it is. */
       ctx->short_index++;
       if (ctx->short_index < strlen(argv[ctx->optind]))
-	{
-	  /* More to come. */
-	  option = argv[ctx->optind][ctx->short_index];
-	  goto process_short_option;
-	}
+        /* More to come. */
+        goto process_short_option;
 
       /* Short bundled option parsed. */
       ctx->short_index = 0;

@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2003-2010 Markku Rossi.
+ * Copyright (c) 2003-2016 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -640,7 +640,7 @@ pi_malloc_dump_blocks(void)
     for (h = hash[idx]; h; h = h->hash_next)
       {
         size_t bytes = 0;
-        size_t blocks = 0;
+        unsigned int blocks = 0;
         unsigned char *data;
         size_t data_len;
 
@@ -682,7 +682,7 @@ pi_malloc_dump_blocks(void)
         total_bytes += bytes;
 
         /* Header. */
-        fprintf(ofp, "<stacktrace blocks=\"%u\" bytes=\"%u\" data=\"",
+        fprintf(ofp, "<stacktrace blocks=\"%u\" bytes=\"%zu\" data=\"",
                 blocks, bytes);
 
         /* Start of block's data. */
@@ -733,7 +733,7 @@ pi_malloc_dump_blocks(void)
 	      "\
 **********************************************************************\n\
 *\n\
-*       Memory leaks found: %u leak%s, %u bytes\n\
+*       Memory leaks found: %u leak%s, %zu bytes\n\
 *       Memory leaks dumped to `%s'\n\
 *\n\
 **********************************************************************\n",
@@ -754,7 +754,7 @@ pi_malloc_dump_statistics(void)
   pi_malloc_lock();
 
   fprintf(stderr,
-	  "malloc: now: #blocks=%u, #bytes=%u max: #blocks=%u, #bytes=%u\n",
+	  "malloc: now: #blocks=%u, #bytes=%zu max: #blocks=%u, #bytes=%zu\n",
 	  pi_malloc_num_blocks, pi_malloc_num_bytes,
 	  pi_malloc_max_num_blocks, pi_malloc_max_num_bytes);
 

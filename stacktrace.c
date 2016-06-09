@@ -3,7 +3,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2001-2010 Markku Rossi.
+ * Copyright (c) 2001-2016 Markku Rossi.
  *
  * Map program counter values for source files.  The program
  * implements both an interactive memory leak check shell and a
@@ -903,7 +903,7 @@ static void
 version(void)
 {
   printf("%s\n\
-Copyright (C) 2005 Markku Rossi.\n\
+Copyright (C) 2005-2016 Markku Rossi.\n\
 Stacktrace comes with NO WARRANTY, to the extent permitted by law.\n\
 You may redistribute copies of stacktrace under the terms of the GNU\n\
 General Public License.  For more information about these matters, see\n\
@@ -3347,7 +3347,7 @@ Possible data formatting options are:\n\
     case DATA_FMT_HEXL:
       for (i = 0; i < data_len; i += 16)
 	{
-	  printf("%08x: ", i);
+	  printf("%08zx: ", i);
 
 	  jmax = data_len - i;
 	  if (jmax > 16)
@@ -3385,7 +3385,7 @@ Possible data formatting options are:\n\
     case DATA_FMT_DEC:
       for (i = 0; i < data_len; i += 8)
 	{
-	  printf("%8x: ", i);
+	  printf("%8zx: ", i);
 
 	  jmax = data_len - i;
 	  if (jmax > 8)

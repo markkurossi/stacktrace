@@ -3,7 +3,7 @@
 #
 # Author: Markku Rossi <mtr@iki.fi>
 #
-# Copyright (c) 2003-2009 Markku Rossi.
+# Copyright (c) 2003-2016 Markku Rossi.
 #               All rights reserved.
 #
 # GNU makefile for the stacktrace program.
@@ -35,7 +35,7 @@ DEFS += -DHAVE_UNISTD_H=1 -DHAVE_STRINGS_H=1
 
 DEFS += -DHAVE_BFD_H=1
 LDFLAGS := -L/usr/local/lib
-LIBS := -lbfd -liberty
+LIBS := -lbfd
 
 SO_CFLAGS = -fPIC -DPIC
 SO_LDFLAGS = -shared

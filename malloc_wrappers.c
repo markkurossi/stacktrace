@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2005-2010 Markku Rossi.
+ * Copyright (c) 2005-2016 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -46,7 +46,7 @@ bootstrap_malloc(size_t size)
 
   if (bootstrap_allocated + size > sizeof(bootstrap_heap))
     {
-      fprintf(stderr, "pimalloc: bootstrap heap out of space: size=%u\n",
+      fprintf(stderr, "pimalloc: bootstrap heap out of space: size=%zu\n",
 	      size);
       return NULL;
     }
@@ -54,7 +54,7 @@ bootstrap_malloc(size_t size)
   ptr = bootstrap_heap + bootstrap_allocated;
   bootstrap_allocated += size;
 
-  fprintf(stderr, "pimalloc: bootstrap_malloc(%u) => %p\n", size, ptr);
+  fprintf(stderr, "pimalloc: bootstrap_malloc(%zu) => %p\n", size, ptr);
 
   return ptr;
 }
