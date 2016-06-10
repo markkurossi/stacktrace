@@ -38,4 +38,4 @@ can use gdb:
 // Markku Rossi
 
 mtr@iki.fi
-http://www.iki.mtr/mtr/
+http://www.iki.fi/mtr/
