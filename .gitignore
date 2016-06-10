@@ -1,4 +1,10 @@
 *.o
 *.so
 stacktrace
+t-stacktrace
+autom4te.cache
+config.log
+config.mk
+config.status
+piconf.h
 *~

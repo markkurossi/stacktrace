@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2003-2007 Markku Rossi.
+ * Copyright (c) 2003-2016 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -19,6 +19,7 @@
 
 /* Get the value of the current frame pointer into the variable
    `fp'. */
+#if SIZEOF_VOID_P == 4
 #define PI_GET_FP(fp)                                   \
 do                                                      \
   {                                                     \
@@ -27,6 +28,18 @@ do                                                      \
     (fp) = _fp;                                         \
   }                                                     \
 while (0)
+#elif SIZEOF_VOID_P == 8
+#define PI_GET_FP(fp)                                   \
+do                                                      \
+  {                                                     \
+    register long _fp;                                  \
+    asm volatile ("movq %%rbp, %0" : "=r" (_fp));       \
+    (fp) = (void *) _fp;                                \
+  }                                                     \
+while (0)
+#else
+#error Do not know how to handle this pointer size!
+#endif
 
 /* Check whether the frame pointer `fp' is valid. */
 #define PI_VALID_FP(fp) ((fp) >= (void *) 0x10000000)
@@ -36,7 +49,7 @@ while (0)
 
 /* Get the program counter from the frame, pointed by the frame
    pointer `fp'. */
-#define PI_FP_GET_PC(fp) (*((void **) (((unsigned char *) (fp)) + 4)))
+#define PI_FP_GET_PC(fp) (((void **) (fp))[1])
 
 
 /***************************** Public functions *****************************/

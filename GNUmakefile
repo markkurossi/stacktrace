@@ -122,11 +122,16 @@ $(mallocdebug_so_objs): %.$(O): %.c
 libmallocdebug.so: $(mallocdebug_so_objs)
 	$(CC) $(LDFLAGS) $(SO_LDFLAGS) -o $@ $^ $(SO_LIBS)
 
-.PHONY: .clean
+.PHONY: .clean .check
 
 clean:
 	$(RM) $(CLEANFILES)
 
+check: t-stacktrace$(EXE)
+	./t-stacktrace$($EXE)
+
+t-stacktrace$(EXE): t-stacktrace.$(O) pistacktrace_x86_gcc.$(O)
+	$(call ld,$@,$+)
 
 # Distribution making.
 

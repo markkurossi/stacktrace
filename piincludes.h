@@ -4,7 +4,7 @@
  *
  * Author: Markku Rossi <mtr@iki.fi>
  *
- * Copyright (c) 2003-2007 Markku Rossi.
+ * Copyright (c) 2003-2016 Markku Rossi.
  *
  * See the LICENSE file for the details on licensing.
  *
@@ -14,6 +14,8 @@
 
 #ifndef PIINCLUDES_H
 #define PIINCLUDES_H
+
+#include "piconf.h"
 
 #define ENABLE_DEBUG 1
 #define HAVE_STRING_H 1
