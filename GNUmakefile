@@ -128,7 +128,7 @@ clean:
 	$(RM) $(CLEANFILES)
 
 check: t-stacktrace$(EXE)
-	./t-stacktrace$($EXE)
+	./t-stacktrace$($EXE) && echo "All tests passed!"
 
 t-stacktrace$(EXE): t-stacktrace.$(O) pistacktrace_x86_gcc.$(O)
 	$(call ld,$@,$+)
